@@ -3,13 +3,31 @@ import os
 import numpy as np
 import opendatasets as od
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.model_selection import train_test_split
+import random
 
 KAGGLE_URL = "https://www.kaggle.com/datasets/rhammell/ships-in-satellite-imagery"
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 JSON_FILENAME = "shipsnet.json"
 BATCH_SIZE = 32
+
+
+def rotate_4_directions(image: torch.Tensor) -> torch.Tensor:
+    """Rotate image in all 4 directions (0°, 90°, 180°, 270°) and stack them.
+    
+    Args:
+        image: Input image tensor of shape (C, H, W).
+        
+    Returns:
+        Stacked tensor of shape (4, C, H, W) containing all 4 rotations.
+    """
+    rotations = []
+    for k in range(4):
+        rotated = torch.rot90(image, k, dims=[1, 2])
+        rotations.append(rotated)
+    return torch.stack(rotations)
 
 def _download_dataset(data_dir: str) -> str:
     """Download the dataset from Kaggle if not already present. Returns path to shipsnet.json."""
@@ -61,6 +79,7 @@ def load_shipsnet(
     seed: int = 42,
     num_workers: int = 0,
     transform=None,
+    use_rotation_augmentation: bool = False,
 ):
     """Download (if needed) and load shipsnet, returning train/val/test DataLoaders.
 
@@ -73,6 +92,7 @@ def load_shipsnet(
         seed: Random seed for reproducible splits.
         num_workers: Workers for DataLoader.
         transform: Optional transform applied to each image tensor.
+        use_rotation_augmentation: If True, apply random 90° rotation to training images.
 
     Returns:
         Tuple of (train_loader, val_loader, test_loader).
@@ -86,6 +106,16 @@ def load_shipsnet(
 
     data = raw["data"]
     labels = raw["labels"]
+
+    if use_rotation_augmentation:
+        base_transform = transform
+        def augment_transform(image):
+            k = random.randint(0, 3)
+            image = torch.rot90(image, k, dims=[1, 2])
+            if base_transform:
+                image = base_transform(image)
+            return image
+        transform = augment_transform
 
     dataset = ShipsDataset(data, labels, transform=transform)
     indices = list(range(len(dataset)))

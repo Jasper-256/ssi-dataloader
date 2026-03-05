@@ -4,3 +4,6 @@
 
 venv
 data
+__pycache__
+
+sample_augmented_images*
